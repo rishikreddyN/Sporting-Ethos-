@@ -81,10 +81,9 @@ function drainQueue() {
     best = voices.find(v => v.lang.toLowerCase().startsWith(langPrefix));
   }
   
-  // Graceful fallback to English if no voice is found for the selected language
+  // Graceful fallback to English voice if no specific voice is found for the selected language
   if (!best) {
-    console.warn(`[Audio] No voice found for language ${item.lang}. Falling back to English.`);
-    utter.lang = 'en-IN'; // Fallback language code
+    console.warn(`[Audio] No specific voice found for language ${item.lang}. Using default voice.`);
     best = 
       voices.find(v => v.lang === 'en-IN') ||
       voices.find(v => v.name.includes('Google US English')) ||

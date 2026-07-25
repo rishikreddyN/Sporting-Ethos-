@@ -336,7 +336,7 @@ export default function DoctorDashboard() {
         });
         if (res.ok) {
           const data = await res.json();
-          if (data.translated) {
+          if (data.translated && data.translated !== templateText) {
             updatedCache[key] = data.translated;
             return;
           }
@@ -345,7 +345,7 @@ export default function DoctorDashboard() {
         console.error(`Failed to pre-fetch translation for ${key}`, err);
       }
       
-      // Fallback
+      // Fallback to local translations if backend returned English or failed
       const fallback = LOCAL_FALLBACKS[lang]?.[key];
       if (fallback) {
         updatedCache[key] = fallback;
