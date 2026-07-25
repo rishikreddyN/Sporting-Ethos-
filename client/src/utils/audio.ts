@@ -55,9 +55,6 @@ function drainQueue() {
   busy = true;
   console.log('[Audio] Speaking:', text);
 
-  // Chrome stall fix
-  window.speechSynthesis.cancel();
-
   const utter = new SpeechSynthesisUtterance(text);
   activeUtterance = utter; // Prevent garbage collection bug in Chrome
 
@@ -107,7 +104,10 @@ export function speakEmergency(text: string) {
   if (!('speechSynthesis' in window)) return;
   console.log('[Audio] EMERGENCY OVERRIDE TRIGGERED. Speaking:', text);
   cancelSpeech();
-  speak(text);
+  // Wait 150ms to allow the browser to fully cancel current speech before scheduling the new one
+  setTimeout(() => {
+    speak(text);
+  }, 150);
 }
 
 export function speak(text: string) {
