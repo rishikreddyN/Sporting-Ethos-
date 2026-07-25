@@ -1,3 +1,5 @@
+import { API_BASE } from '../config';
+
 /**
  * Robust Audio + Voice System
  * Fixes: voices async loading, SpeechSynthesis stalling, AudioContext suspension
@@ -57,7 +59,8 @@ let busy = false;
 
 function playGoogleTTS(text: string, langPrefix: string, onDone: () => void) {
   try {
-    const url = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(text)}&tl=${langPrefix}&client=tw-ob`;
+    const url = `${API_BASE}/api/tts?text=${encodeURIComponent(text)}&lang=${langPrefix}`;
+    console.log('[Audio] Fetching backend proxied TTS audio from:', url);
     const audio = new Audio(url);
     activeAudio = audio;
 
@@ -66,18 +69,18 @@ function playGoogleTTS(text: string, langPrefix: string, onDone: () => void) {
       onDone();
     };
     audio.onerror = (e) => {
-      console.warn('[Audio] Google TTS audio error:', e);
+      console.warn('[Audio] Proxied TTS audio error:', e);
       if (activeAudio === audio) activeAudio = null;
       onDone();
     };
 
     audio.play().catch(err => {
-      console.warn('[Audio] Google TTS audio play() failed:', err);
+      console.warn('[Audio] Proxied TTS audio play() failed:', err);
       if (activeAudio === audio) activeAudio = null;
       onDone();
     });
   } catch (err) {
-    console.warn('[Audio] Failed to instantiate Audio for Google TTS:', err);
+    console.warn('[Audio] Failed to instantiate Audio for proxied TTS:', err);
     onDone();
   }
 }

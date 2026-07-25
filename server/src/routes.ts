@@ -465,6 +465,43 @@ export function createRouter(io: Server): Router {
     }
   });
 
+  // GET endpoint to proxy TTS audio requests (bypasses browser referrer blocks)
+  router.get('/tts', async (req: Request, res: Response) => {
+    const text = req.query.text as string;
+    const lang = (req.query.lang as string) || 'hi';
+
+    if (!text) {
+      return res.status(400).json({ error: 'text parameter is required' });
+    }
+
+    try {
+      const googleTtsUrl = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(text)}&tl=${lang}&client=tw-ob`;
+      const response = await fetch(googleTtsUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        }
+      });
+
+      if (!response.ok) {
+        return res.status(response.status).json({ error: 'TTS generation failed' });
+      }
+
+      const arrayBuffer = await response.arrayBuffer();
+      const buffer = Buffer.from(arrayBuffer);
+
+      res.set({
+        'Content-Type': 'audio/mpeg',
+        'Content-Length': buffer.length.toString(),
+        'Cache-Control': 'public, max-age=86400'
+      });
+
+      res.send(buffer);
+    } catch (err) {
+      console.error('[TTS Proxy Error]:', err);
+      res.status(500).json({ error: 'TTS audio proxy error' });
+    }
+  });
+
   // POST endpoint to translate text using Groq
   router.post('/translate', async (req: Request, res: Response) => {
     const { text, targetLanguage } = req.body;
