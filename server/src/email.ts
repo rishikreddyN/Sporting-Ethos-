@@ -41,12 +41,22 @@ export async function sendQrEmail(
               <p>Your appointment with <strong>${expertName}</strong> is confirmed for <strong>${new Date(scheduledTime).toLocaleString()}</strong>.</p>
               <p>Please show this QR code at reception when you arrive for instant check-in:</p>
               <div style="text-align: center; margin: 25px 0;">
-                <img src="data:image/png;base64,${qrBase64}" style="width: 200px; height: 200px; display: block; margin: 0 auto; border: 1px solid #cbd5e1; border-radius: 6px; padding: 5px;" alt="Appointment QR Code" />
+                <img src="cid:qrcode" style="width: 200px; height: 200px; display: block; margin: 0 auto; border: 1px solid #cbd5e1; border-radius: 6px; padding: 5px;" alt="Appointment QR Code" />
               </div>
               <p style="font-size: 13px; color: #64748b;">Appointment ID: <code>${appointmentId}</code></p>
               <p style="margin-top: 25px;">See you soon,<br/><strong>Sporting Ethos High Performance Centre</strong></p>
             </div>
-          `
+          `,
+          attachments: [
+            {
+              filename: 'checkin-qr.png',
+              content: qrBase64,
+              contentId: 'qrcode',
+              content_id: 'qrcode',
+              contentType: 'image/png',
+              content_type: 'image/png'
+            }
+          ]
         })
       });
 
