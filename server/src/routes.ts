@@ -4,6 +4,7 @@ import { startEscalationTimer, triggerEscalationImmediately } from './escalation
 import { Server } from 'socket.io';
 import { v4 as uuidv4 } from 'uuid';
 import { sendQrEmail, getLastSentQr } from './email';
+import { summarizeSymptoms } from './ai';
 
 export function createRouter(io: Server): Router {
   const router = Router();
@@ -347,6 +348,37 @@ export function createRouter(io: Server): Router {
 
       // Execute asynchronously, catch errors so it doesn't crash the check-in response
       triggerAsyncEmail().catch(err => console.error("Async confirmation email failed", err));
+
+      // Run AI triage asynchronously and non-blockingly
+      const triggerAsyncAiTriage = async () => {
+        if (!symptoms || !symptoms.trim()) return;
+        try {
+          const aiResult = await summarizeSymptoms(symptoms);
+          if (aiResult) {
+            console.log(`[AI Triage Success] for appointment ${appointmentId}:`, aiResult);
+            // Save to database
+            await db.run(
+              'UPDATE appointments SET ai_summary = ?, ai_urgency = ? WHERE id = ?',
+              [aiResult.summary, aiResult.urgency, appointmentId]
+            );
+            // Fetch updated appointment
+            const finalAppt = await db.get(
+              `SELECT a.*, u.name as expert_name, u.email as expert_email 
+               FROM appointments a 
+               JOIN users u ON a.expert_id = u.id 
+               WHERE a.id = ?`,
+              [appointmentId]
+            );
+            // Broadcast update to doctor / staff dashboards
+            io.to('staff').emit('appointment:updated', finalAppt);
+            io.to(`expert:${finalAppt.expert_id}`).emit('appointment:updated', finalAppt);
+          }
+        } catch (err) {
+          console.error('[AI Triage Error] failed in background task:', err);
+        }
+      };
+
+      triggerAsyncAiTriage().catch(err => console.error("Async AI triage failed", err));
 
       res.json({
         success: true,

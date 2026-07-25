@@ -21,6 +21,8 @@ interface Appointment {
   checked_in_at?: string;
   symptoms?: string;
   escalated?: number;
+  ai_summary?: string;
+  ai_urgency?: string;
 }
 
 interface ToastNotification {
@@ -34,15 +36,23 @@ function EscalationCountdown({
   checkedInAt, 
   isEscalated, 
   escalationWindowSeconds,
-  onFastForwardEscalation
+  onFastForwardEscalation,
+  onWarnLevelChange,
+  patientName
 }: { 
   checkedInAt: string; 
   isEscalated: boolean; 
   escalationWindowSeconds: number;
   onFastForwardEscalation: () => void;
+  onWarnLevelChange: (level: 0 | 50 | 80 | 100) => void;
+  patientName: string;
 }) {
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const totalSeconds = escalationWindowSeconds;
+
+  const hasFired50 = useRef(false);
+  const hasFired80 = useRef(false);
+  const lastLevel = useRef<0 | 50 | 80 | 100>(0);
 
   useEffect(() => {
     const checkinTime = new Date(checkedInAt).getTime();
@@ -54,6 +64,39 @@ function EscalationCountdown({
     const interval = setInterval(update, 1000);
     return () => clearInterval(interval);
   }, [checkedInAt]);
+
+  useEffect(() => {
+    const elapsedPercent = (elapsedSeconds / totalSeconds) * 100;
+    
+    // Determine warning level
+    let currentLevel: 0 | 50 | 80 | 100 = 0;
+    if (isEscalated || elapsedSeconds >= totalSeconds) {
+      currentLevel = 100;
+    } else if (elapsedPercent >= 80) {
+      currentLevel = 80;
+    } else if (elapsedPercent >= 50) {
+      currentLevel = 50;
+    }
+
+    if (lastLevel.current !== currentLevel) {
+      lastLevel.current = currentLevel;
+      onWarnLevelChange(currentLevel);
+    }
+
+    // Voice Reminders
+    if (elapsedPercent >= 80 && elapsedPercent < 100) {
+      if (!hasFired80.current) {
+        hasFired80.current = true;
+        hasFired50.current = true;
+        speak(`${patientName} has been waiting a while, please acknowledge soon.`);
+      }
+    } else if (elapsedPercent >= 50 && elapsedPercent < 80) {
+      if (!hasFired50.current) {
+        hasFired50.current = true;
+        speak(`Reminder: ${patientName} is waiting.`);
+      }
+    }
+  }, [elapsedSeconds, totalSeconds, isEscalated, patientName, onWarnLevelChange]);
 
   const timeLeft = Math.max(0, totalSeconds - elapsedSeconds);
   const minutes = Math.floor(timeLeft / 60);
@@ -97,6 +140,93 @@ function EscalationCountdown({
           title="Instantly trigger escalation for testing purposes"
         >
           Fast-forward
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function PatientWaitingCard({
+  appt,
+  escalationWindowSeconds,
+  onAcknowledge,
+  onDeveloperEscalate
+}: {
+  appt: Appointment;
+  escalationWindowSeconds: number;
+  onAcknowledge: (id: string) => void;
+  onDeveloperEscalate: (id: string) => void;
+}) {
+  const [warnLevel, setWarnLevel] = useState<0 | 50 | 80 | 100>(0);
+  const isEsc = appt.escalated === 1 || warnLevel === 100;
+
+  let stateClass = 'state-checked_in';
+  if (isEsc) {
+    stateClass = 'state-escalated';
+  } else if (warnLevel === 80) {
+    stateClass = 'state-warn-80';
+  } else if (warnLevel === 50) {
+    stateClass = 'state-warn-50';
+  }
+
+  let urgencyClass = 'urgency-moderate';
+  if (appt.ai_urgency === 'Routine') {
+    urgencyClass = 'urgency-routine';
+  } else if (appt.ai_urgency === 'Prompt attention suggested') {
+    urgencyClass = 'urgency-urgent';
+  }
+
+  return (
+    <div key={appt.id} className={`patient-mini-card ${stateClass}`}>
+      <div className="card-header">
+        <span className="patient-name">
+          {isEsc && <span style={{ marginRight: '0.35rem', color: 'var(--status-escalated)' }}>⚠️</span>}
+          {appt.patient_name}
+        </span>
+        <span className="appointment-time">
+          Arrived: {appt.checked_in_at ? new Date(appt.checked_in_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Now'}
+        </span>
+      </div>
+
+      {appt.ai_summary ? (
+        <div className="ai-summary-container">
+          <div className="ai-header-label">
+            AI-assisted summary (not a diagnosis) — please review the patient directly
+          </div>
+          <div className="ai-summary-text">
+            {appt.ai_summary}
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.25rem' }}>
+            <span className={`urgency-badge ${urgencyClass}`}>
+              Urgency: {appt.ai_urgency}
+            </span>
+          </div>
+          <div className="ai-disclaimer">
+            AI-generated summary for triage convenience only — always confirm with the patient directly.
+          </div>
+        </div>
+      ) : (
+        appt.symptoms && (
+          <div className="symptoms-tag">
+            📝 {appt.symptoms}
+          </div>
+        )
+      )}
+
+      {appt.checked_in_at && (
+        <EscalationCountdown 
+          checkedInAt={appt.checked_in_at}
+          isEscalated={appt.escalated === 1}
+          escalationWindowSeconds={escalationWindowSeconds}
+          onFastForwardEscalation={() => onDeveloperEscalate(appt.id)}
+          onWarnLevelChange={setWarnLevel}
+          patientName={appt.patient_name}
+        />
+      )}
+
+      <div className="card-actions">
+        <button className="btn btn-primary" onClick={() => onAcknowledge(appt.id)}>
+          Acknowledge & Call Patient
         </button>
       </div>
     </div>
@@ -637,43 +767,15 @@ export default function DoctorDashboard() {
                 No patients in waiting room
               </p>
             ) : (
-              checkedInCol.map(appt => {
-                const isEsc = appt.escalated === 1;
-                return (
-                  <div key={appt.id} className={`patient-mini-card state-checked_in ${isEsc ? 'state-escalated' : ''}`}>
-                    <div className="card-header">
-                      <span className="patient-name">
-                        {isEsc && <span style={{ marginRight: '0.35rem', color: 'var(--status-escalated)' }}>⚠️</span>}
-                        {appt.patient_name}
-                      </span>
-                      <span className="appointment-time">
-                        Arrived: {appt.checked_in_at ? new Date(appt.checked_in_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Now'}
-                      </span>
-                    </div>
-
-                    {appt.symptoms && (
-                      <div className="symptoms-tag">
-                        📝 {appt.symptoms}
-                      </div>
-                    )}
-
-                    {appt.checked_in_at && (
-                      <EscalationCountdown 
-                        checkedInAt={appt.checked_in_at}
-                        isEscalated={isEsc}
-                        escalationWindowSeconds={escalationWindowSeconds}
-                        onFastForwardEscalation={() => handleDeveloperEscalate(appt.id)}
-                      />
-                    )}
-
-                    <div className="card-actions">
-                      <button className="btn btn-primary" onClick={() => handleAcknowledge(appt.id)}>
-                        Acknowledge & Call Patient
-                      </button>
-                    </div>
-                  </div>
-                );
-              })
+              checkedInCol.map(appt => (
+                <PatientWaitingCard
+                  key={appt.id}
+                  appt={appt}
+                  escalationWindowSeconds={escalationWindowSeconds}
+                  onAcknowledge={handleAcknowledge}
+                  onDeveloperEscalate={handleDeveloperEscalate}
+                />
+              ))
             )}
           </div>
         </div>
