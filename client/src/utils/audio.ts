@@ -77,13 +77,17 @@ function drainQueue() {
   }
 
   utter.onend = () => {
-    activeUtterance = null;
+    if (activeUtterance === utter) {
+      activeUtterance = null;
+    }
     busy = false;
     setTimeout(drainQueue, 300);
   };
   utter.onerror = (e) => {
     console.warn('[Audio] Speech error:', e);
-    activeUtterance = null;
+    if (activeUtterance === utter) {
+      activeUtterance = null;
+    }
     busy = false;
     setTimeout(drainQueue, 300);
   };
@@ -93,7 +97,7 @@ function drainQueue() {
 
 export function cancelSpeech() {
   if (!('speechSynthesis' in window)) return;
-  console.log('[Audio] Canceling all speech and clearing queue.');
+  console.log('[Audio] Canceling all speech and clearing queue.', activeUtterance ? 'Active speech was playing.' : '');
   queue.length = 0;
   window.speechSynthesis.cancel();
   busy = false;

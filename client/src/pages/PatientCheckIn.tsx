@@ -440,13 +440,13 @@ export default function PatientCheckIn({
             {/* Symptoms Field */}
             <div className="form-group">
               <label className="form-label" htmlFor="symptoms">
-                Current Condition / Symptom Update (Optional)
+                What's the reason for your visit today? (optional)
               </label>
               <textarea
                 id="symptoms"
                 className="form-input"
                 style={{ resize: 'vertical', minHeight: '80px' }}
-                placeholder="e.g. Right knee tightness, mild hamstring soreness..."
+                placeholder="e.g. right kidney tightness for 2 days"
                 value={symptoms}
                 onChange={(e) => setSymptoms(e.target.value)}
               />
