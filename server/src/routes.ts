@@ -351,15 +351,14 @@ export function createRouter(io: Server): Router {
 
       // Run AI triage asynchronously and non-blockingly
       const triggerAsyncAiTriage = async () => {
-        if (!symptoms || !symptoms.trim()) return;
         try {
-          const aiResult = await summarizeSymptoms(symptoms);
+          const aiResult = await summarizeSymptoms(symptoms || '');
           if (aiResult) {
             console.log(`[AI Triage Success] for appointment ${appointmentId}:`, aiResult);
             // Save to database
             await db.run(
-              'UPDATE appointments SET ai_summary = ?, ai_urgency = ? WHERE id = ?',
-              [aiResult.summary, aiResult.urgency, appointmentId]
+              'UPDATE appointments SET ai_summary = ?, ai_urgency = ?, ai_reasoning = ? WHERE id = ?',
+              [aiResult.summary, aiResult.urgency, aiResult.reasoning, appointmentId]
             );
             // Fetch updated appointment
             const finalAppt = await db.get(

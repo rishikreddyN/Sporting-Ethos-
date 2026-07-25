@@ -1,7 +1,7 @@
 import { API_BASE, WS_URL } from '../config';
 import { useState, useEffect, useRef } from 'react';
 import { io, Socket } from 'socket.io-client';
-import { playChime, playAlert, unlockAudio, speak } from '../utils/audio';
+import { playChime, playAlert, unlockAudio, speak, speakEmergency, cancelSpeech } from '../utils/audio';
 
 interface User {
   id: string;
@@ -23,6 +23,7 @@ interface Appointment {
   escalated?: number;
   ai_summary?: string;
   ai_urgency?: string;
+  ai_reasoning?: string;
 }
 
 interface ToastNotification {
@@ -158,10 +159,14 @@ function PatientWaitingCard({
   onDeveloperEscalate: (id: string) => void;
 }) {
   const [warnLevel, setWarnLevel] = useState<0 | 50 | 80 | 100>(0);
+  
+  const isEmergency = String(appt.ai_urgency).toLowerCase() === 'emergency';
   const isEsc = appt.escalated === 1 || warnLevel === 100;
 
   let stateClass = 'state-checked_in';
-  if (isEsc) {
+  if (isEmergency) {
+    stateClass = 'state-emergency';
+  } else if (isEsc) {
     stateClass = 'state-escalated';
   } else if (warnLevel === 80) {
     stateClass = 'state-warn-80';
@@ -170,18 +175,23 @@ function PatientWaitingCard({
   }
 
   let urgencyClass = 'urgency-moderate';
-  if (appt.ai_urgency === 'Routine') {
+  const normUrgency = String(appt.ai_urgency).toLowerCase();
+  if (normUrgency === 'routine') {
     urgencyClass = 'urgency-routine';
-  } else if (appt.ai_urgency === 'Prompt attention suggested') {
+  } else if (normUrgency === 'emergency') {
     urgencyClass = 'urgency-urgent';
+  } else if (normUrgency === 'moderate') {
+    urgencyClass = 'urgency-moderate';
   }
 
   return (
     <div key={appt.id} className={`patient-mini-card ${stateClass}`}>
       <div className="card-header">
         <span className="patient-name">
-          {isEsc && <span style={{ marginRight: '0.35rem', color: 'var(--status-escalated)' }}>⚠️</span>}
+          {isEmergency && <span style={{ marginRight: '0.35rem' }}>🚨</span>}
+          {isEsc && !isEmergency && <span style={{ marginRight: '0.35rem', color: 'var(--status-escalated)' }}>⚠️</span>}
           {appt.patient_name}
+          {isEmergency && <span className="emergency-header-badge" style={{ marginLeft: '0.5rem', background: '#ffffff', color: '#dc2626', fontSize: '0.6rem', fontWeight: 800, padding: '0.1rem 0.35rem', borderRadius: '3px', textTransform: 'uppercase', verticalAlign: 'middle', display: 'inline-block' }}>EMERGENCY FLAG</span>}
         </span>
         <span className="appointment-time">
           Arrived: {appt.checked_in_at ? new Date(appt.checked_in_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Now'}
@@ -196,14 +206,26 @@ function PatientWaitingCard({
           <div className="ai-summary-text">
             {appt.ai_summary}
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.25rem' }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '0.5rem', marginTop: '0.25rem' }}>
             <span className={`urgency-badge ${urgencyClass}`}>
               Urgency: {appt.ai_urgency}
             </span>
+            {appt.ai_reasoning && (
+              <span className="ai-reasoning-label" style={{ fontSize: '0.7rem', color: 'rgba(255,255,255,0.6)', fontStyle: 'italic' }}>
+                ({appt.ai_reasoning})
+              </span>
+            )}
           </div>
-          <div className="ai-disclaimer">
-            AI-generated summary for triage convenience only — always confirm with the patient directly.
-          </div>
+          
+          {isEmergency ? (
+            <div className="ai-disclaimer emergency-disclaimer" style={{ color: '#fca5a5', fontWeight: 'bold', borderTop: '1px dashed rgba(239,68,68,0.3)', marginTop: '0.5rem', paddingTop: '0.35rem' }}>
+              ⚠️ AI-suggested triage flag — always confirm directly with the patient. Not a medical diagnosis.
+            </div>
+          ) : (
+            <div className="ai-disclaimer">
+              AI-generated summary for triage convenience only — always confirm with the patient directly.
+            </div>
+          )}
         </div>
       ) : (
         appt.symptoms && (
@@ -243,6 +265,8 @@ export default function DoctorDashboard() {
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [escalationWindowSeconds, setEscalationWindowSeconds] = useState<number>(300);
   const [notifications, setNotifications] = useState<ToastNotification[]>([]);
+  
+  const announcedEmergenciesRef = useRef<Set<string>>(new Set());
   
   // Registration form states
   const [showRegisterForm, setShowRegisterForm] = useState<boolean>(false);
@@ -325,8 +349,12 @@ export default function DoctorDashboard() {
       if (updatedAppt.expert_id !== selectedDoctor.id) return;
 
       console.log('[Doctor Alert] patient:checked-in event received:', updatedAppt.patient_name);
+      
+      const docCleanName = selectedDoctor.name.split('(')[0].trim();
+      const docSpoken = docCleanName.toLowerCase().startsWith('dr.') ? docCleanName : `Dr. ${docCleanName}`;
+      
       playChime();
-      speak(`${updatedAppt.patient_name} has checked in for ${selectedDoctor.name}.`);
+      speak(`${updatedAppt.patient_name} has checked in for ${docSpoken}.`);
 
       const id = Date.now().toString();
       setNotifications(prev => [
@@ -353,7 +381,17 @@ export default function DoctorDashboard() {
 
     socket.on('appointment:updated', (updatedAppt: Appointment) => {
       if (updatedAppt.expert_id !== selectedDoctor.id) return;
+      
       setAppointments(prev => prev.map(a => a.id === updatedAppt.id ? updatedAppt : a));
+
+      // Trigger immediate emergency alert if not already announced
+      const urgency = String(updatedAppt.ai_urgency).toLowerCase();
+      if (urgency === 'emergency' && !announcedEmergenciesRef.current.has(updatedAppt.id)) {
+        announcedEmergenciesRef.current.add(updatedAppt.id);
+        console.log('[Doctor Alert] IMMEDIATE Emergency Triage for:', updatedAppt.patient_name);
+        playAlert();
+        speakEmergency(`Emergency flag: ${updatedAppt.patient_name} may need immediate attention. Reason: ${updatedAppt.ai_reasoning || 'No specific reasoning provided.'}`);
+      }
     });
 
     socket.on('escalation:triggered', (data: { appointmentId: string; appointment: Appointment }) => {
@@ -361,8 +399,8 @@ export default function DoctorDashboard() {
 
       console.log('[Doctor Warning] Your patient escalated:', data);
       playAlert();
-      // Urgent voice announcement
-      speak(`Urgent. ${data.appointment.patient_name} has been waiting too long and needs acknowledgment now.`);
+      // Speak the exact 100% escalation string
+      speak(`Escalation: ${data.appointment.patient_name} has exceeded the wait limit.`);
 
       const id = Date.now().toString();
       setNotifications(prev => [
@@ -409,6 +447,7 @@ export default function DoctorDashboard() {
       appointmentId,
       actorId: selectedDoctor.id
     });
+    cancelSpeech();
   };
 
   const handleStartConsultation = (appointmentId: string) => {

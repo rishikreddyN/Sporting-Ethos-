@@ -45,6 +45,7 @@ export async function unlockAudio(): Promise<void> {
 
 // ─── Speech queue ─────────────────────────────────────────────────────────────
 
+let activeUtterance: SpeechSynthesisUtterance | null = null;
 const queue: string[] = [];
 let busy = false;
 
@@ -58,6 +59,8 @@ function drainQueue() {
   window.speechSynthesis.cancel();
 
   const utter = new SpeechSynthesisUtterance(text);
+  activeUtterance = utter; // Prevent garbage collection bug in Chrome
+
   utter.lang = 'en-US';
   utter.rate = 1.0;
   utter.pitch = 1.0;
@@ -76,14 +79,35 @@ function drainQueue() {
     console.log('[Audio] Using voice:', best.name);
   }
 
-  utter.onend = () => { busy = false; setTimeout(drainQueue, 300); };
+  utter.onend = () => {
+    activeUtterance = null;
+    busy = false;
+    setTimeout(drainQueue, 300);
+  };
   utter.onerror = (e) => {
     console.warn('[Audio] Speech error:', e);
+    activeUtterance = null;
     busy = false;
     setTimeout(drainQueue, 300);
   };
 
   window.speechSynthesis.speak(utter);
+}
+
+export function cancelSpeech() {
+  if (!('speechSynthesis' in window)) return;
+  console.log('[Audio] Canceling all speech and clearing queue.');
+  queue.length = 0;
+  window.speechSynthesis.cancel();
+  busy = false;
+  activeUtterance = null;
+}
+
+export function speakEmergency(text: string) {
+  if (!('speechSynthesis' in window)) return;
+  console.log('[Audio] EMERGENCY OVERRIDE TRIGGERED. Speaking:', text);
+  cancelSpeech();
+  speak(text);
 }
 
 export function speak(text: string) {

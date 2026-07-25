@@ -83,17 +83,23 @@ export async function sendQrEmail(
 
   if (host && user && pass) {
     try {
-      console.log(`[EMAIL] Attempting SMTP via ${host}:${port}...`);
+      console.log(`[EMAIL SMTP INIT] Host: ${host}:${port}, User: ${user}`);
+      console.log(`[EMAIL SMTP DETAILS] Recipient (To): "${patientEmail}", Patient: "${patientName}", Expert: "${expertName}"`);
+      
       const smtpTransporter = nodemailer.createTransport({
         host,
         port,
         secure: port === 465,
         auth: { user, pass },
         tls: { rejectUnauthorized: false },
-        connectionTimeout: 10000 // 10 second timeout
+        connectionTimeout: 10000, // 10 second timeout
+        debug: true,
+        logger: true
       });
 
       const mailSender = `"Sporting Ethos Support" <${user}>`;
+      console.log(`[EMAIL SMTP SENDING] Initiating sendMail to "${patientEmail}"...`);
+      
       const info = await smtpTransporter.sendMail({
         from: mailSender,
         to: patientEmail,
@@ -113,11 +119,20 @@ export async function sendQrEmail(
       });
 
       console.log(`[EMAIL SENT SMTP SUCCESS] MessageID: ${info.messageId}`);
+      console.log(`[EMAIL SENT SMTP RESPONSE]: ${info.response}`);
+      console.log(`[EMAIL SENT SMTP ACCEPTED]:`, info.accepted);
+      console.log(`[EMAIL SENT SMTP REJECTED]:`, info.rejected);
+      
       lastSentQrUrl = checkinUrl;
       lastSentQrToken = token;
       return { testUrl: checkinUrl, token };
-    } catch (smtpErr) {
-      console.error('[EMAIL SMTP FAILED]:', smtpErr);
+    } catch (smtpErr: any) {
+      console.error('[EMAIL SMTP FAILED] Detailed SMTP Error:', smtpErr);
+      if (smtpErr && typeof smtpErr === 'object') {
+        console.error('[EMAIL SMTP ERROR CODE]:', smtpErr.code);
+        console.error('[EMAIL SMTP ERROR COMMAND]:', smtpErr.command);
+        console.error('[EMAIL SMTP ERROR RESPONSE]:', smtpErr.response);
+      }
     }
   }
 

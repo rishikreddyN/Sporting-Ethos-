@@ -672,6 +672,44 @@ input[type="checkbox"] {
   }
 }
 
+/* Emergency State Styles */
+.state-emergency {
+  border: 1.5px solid #ef4444 !important;
+  background: rgba(220, 38, 38, 0.05) !important;
+  box-shadow: 0 0 12px rgba(220, 38, 38, 0.2) !important;
+  animation: emergency-card-pulse 1.5s infinite alternate !important;
+}
+
+.state-emergency .card-header {
+  background: #dc2626 !important;
+  margin: -1.25rem -1.25rem 0.75rem -1.25rem !important;
+  padding: 0.75rem 1.25rem !important;
+  border-top-left-radius: 5px !important;
+  border-top-right-radius: 5px !important;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.15) !important;
+}
+
+.state-emergency .card-header .patient-name {
+  color: #ffffff !important;
+  font-weight: 700 !important;
+}
+
+.state-emergency .card-header .appointment-time {
+  color: rgba(255, 255, 255, 0.8) !important;
+  font-weight: 600 !important;
+}
+
+@keyframes emergency-card-pulse {
+  from {
+    box-shadow: 0 0 6px rgba(220, 38, 38, 0.25);
+    border-color: #ef4444;
+  }
+  to {
+    box-shadow: 0 0 14px rgba(220, 38, 38, 0.55);
+    border-color: #b91c1c;
+  }
+}
+
 /* Acknowledged State */
 .state-acknowledged {
   border-left: 3px solid var(--status-acknowledged);

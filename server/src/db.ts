@@ -27,7 +27,9 @@ export interface Appointment {
   escalated?: number; // 0 or 1
   ai_summary?: string;
   ai_urgency?: string;
+  ai_reasoning?: string;
 }
+
 
 export interface AuditLog {
   id: string;
@@ -82,6 +84,7 @@ export async function initDb(): Promise<Database<sqlite3.Database, sqlite3.State
       escalated INTEGER DEFAULT 0 CHECK(escalated IN (0, 1)),
       ai_summary TEXT,
       ai_urgency TEXT,
+      ai_reasoning TEXT,
       FOREIGN KEY (expert_id) REFERENCES users(id) ON DELETE CASCADE
     )
   `);
@@ -94,6 +97,11 @@ export async function initDb(): Promise<Database<sqlite3.Database, sqlite3.State
   }
   try {
     await db.exec('ALTER TABLE appointments ADD COLUMN ai_urgency TEXT');
+  } catch (e) {
+    // Column already exists
+  }
+  try {
+    await db.exec('ALTER TABLE appointments ADD COLUMN ai_reasoning TEXT');
   } catch (e) {
     // Column already exists
   }

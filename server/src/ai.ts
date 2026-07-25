@@ -3,21 +3,36 @@ dotenv.config();
 
 export interface AiTriageResult {
   summary: string;
-  urgency: 'Routine' | 'Moderate' | 'Prompt attention suggested';
+  urgency: 'routine' | 'moderate' | 'emergency';
+  reasoning: string;
 }
 
 export async function summarizeSymptoms(symptoms: string): Promise<AiTriageResult | null> {
+  // Default to "routine" with summary "No specific symptoms provided." if empty or unclear
   if (!symptoms || !symptoms.trim()) {
-    return null;
+    return {
+      summary: 'No specific symptoms provided.',
+      urgency: 'routine',
+      reasoning: 'No symptom description was entered.'
+    };
   }
 
-  const prompt = `You are a clinical triage assistant. Summarize the following patient symptoms into a one-line doctor-friendly summary (maximum 10 words, clinical tone) and categorize the urgency as one of: Routine, Moderate, or Prompt attention suggested.
-Respond ONLY with a JSON object in this format:
+  const systemPrompt = `You are a clinical triage assistant helping a front-desk system flag urgency for a doctor — you are NOT diagnosing, only triaging based on language patterns in what the patient typed.
+
+Given the patient's self-reported symptom text, respond ONLY with a JSON object in this exact format:
+
 {
-  "summary": "one-line clinical summary",
-  "urgency": "Routine" | "Moderate" | "Prompt attention suggested"
+  "summary": "one short, doctor-friendly sentence rephrasing the complaint",
+  "urgency": "routine" | "moderate" | "emergency",
+  "reasoning": "one short phrase explaining why this urgency level was chosen"
 }
-Symptoms: "${symptoms}"`;
+
+Guidelines for urgency:
+- "emergency": language suggesting severe pain, difficulty breathing, chest pain, loss of consciousness, heavy bleeding, sudden severe onset, numbness/paralysis, or any wording implying a potentially life-threatening or rapidly worsening condition.
+- "moderate": persistent or worsening pain, moderate discomfort, symptoms lasting several days, or anything that sounds like it needs timely but not immediate attention.
+- "routine": mild, vague, minor, or general wellness/checkup-type language.
+
+Never provide medical advice, a diagnosis, or treatment suggestions. Only classify urgency and rephrase the complaint neutrally. If the text is empty or unclear, default to "routine" with summary "No specific symptoms provided."`;
 
   // 1. Try Groq API
   if (process.env.GROQ_API_KEY) {
@@ -35,7 +50,8 @@ Symptoms: "${symptoms}"`;
         body: JSON.stringify({
           model: 'llama-3.1-8b-instant',
           messages: [
-            { role: 'user', content: prompt }
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: symptoms }
           ],
           response_format: { type: 'json_object' }
         }),
@@ -51,7 +67,8 @@ Symptoms: "${symptoms}"`;
           if (parsed.summary && parsed.urgency) {
             return {
               summary: parsed.summary,
-              urgency: normalizeUrgency(parsed.urgency)
+              urgency: normalizeUrgency(parsed.urgency),
+              reasoning: parsed.reasoning || 'No specific reasoning provided by AI.'
             };
           }
         }
@@ -76,7 +93,12 @@ Symptoms: "${symptoms}"`;
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
+          contents: [
+            {
+              role: 'user',
+              parts: [{ text: `${systemPrompt}\n\nPatient symptoms:\n"${symptoms}"` }]
+            }
+          ],
           generationConfig: {
             responseMimeType: 'application/json'
           }
@@ -93,7 +115,8 @@ Symptoms: "${symptoms}"`;
           if (parsed.summary && parsed.urgency) {
             return {
               summary: parsed.summary,
-              urgency: normalizeUrgency(parsed.urgency)
+              urgency: normalizeUrgency(parsed.urgency),
+              reasoning: parsed.reasoning || 'No specific reasoning provided by AI.'
             };
           }
         }
@@ -109,16 +132,13 @@ Symptoms: "${symptoms}"`;
   return null;
 }
 
-function normalizeUrgency(urgency: string): 'Routine' | 'Moderate' | 'Prompt attention suggested' {
+function normalizeUrgency(urgency: string): 'routine' | 'moderate' | 'emergency' {
   const normalized = String(urgency).toLowerCase().trim();
-  if (normalized.includes('routine')) {
-    return 'Routine';
+  if (normalized.includes('emergency') || normalized.includes('urgent') || normalized.includes('prompt')) {
+    return 'emergency';
   }
   if (normalized.includes('moderate')) {
-    return 'Moderate';
+    return 'moderate';
   }
-  if (normalized.includes('prompt') || normalized.includes('suggested') || normalized.includes('urgent') || normalized.includes('attention')) {
-    return 'Prompt attention suggested';
-  }
-  return 'Moderate'; // fallback default
+  return 'routine';
 }
