@@ -11,7 +11,12 @@ const getBackendUrl = (): string => {
   }
   
   // If running in production (Vercel / web domain)
-  if (typeof window !== 'undefined' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+  if (
+    typeof window !== 'undefined' && 
+    window.location.hostname !== 'localhost' && 
+    window.location.hostname !== '127.0.0.1' && 
+    window.location.hostname !== '[::1]'
+  ) {
     return 'https://sporting-ethos.onrender.com';
   }
   
