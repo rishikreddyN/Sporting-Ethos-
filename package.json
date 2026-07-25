@@ -1,0 +1,16 @@
+{
+  "name": "real-time-patient-checkin",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "install:all": "npm install && npm run install:client && npm run install:server",
+    "install:client": "npm install --prefix client",
+    "install:server": "npm install --prefix server",
+    "dev": "npx concurrently -k -n \"client,server\" -c \"cyan,green\" \"npm run dev --prefix client -- --host 0.0.0.0\" \"npm run dev --prefix server\"",
+    "build:all": "npm run build --prefix client"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}
