@@ -70,31 +70,18 @@ function drainQueue() {
 
   // Pick best voice for the target language
   const voices = window.speechSynthesis.getVoices();
-  console.log('[Audio] Available voices:', voices.length);
+  console.log('[Audio] Available voices count:', voices.length);
   
-  // Find a voice matching the target language code (e.g. 'hi-IN')
-  let best = voices.find(v => v.lang.toLowerCase() === item.lang.toLowerCase());
-  
-  // Fallback to prefix matching (e.g. 'hi' for 'hi-IN')
-  if (!best) {
-    const langPrefix = item.lang.split('-')[0].toLowerCase();
-    best = voices.find(v => v.lang.toLowerCase().startsWith(langPrefix));
-  }
-  
-  // Graceful fallback to English voice if no specific voice is found for the selected language
-  if (!best) {
-    console.warn(`[Audio] No specific voice found for language ${item.lang}. Using default voice.`);
-    best = 
-      voices.find(v => v.lang === 'en-IN') ||
-      voices.find(v => v.name.includes('Google US English')) ||
-      voices.find(v => v.lang === 'en-US' && !v.localService) ||
-      voices.find(v => v.lang.startsWith('en')) ||
-      undefined;
-  }
+  const langPrefix = item.lang.split('-')[0].toLowerCase();
+  const matchedVoice = 
+    voices.find(v => v.lang.toLowerCase() === item.lang.toLowerCase()) ||
+    voices.find(v => v.lang.toLowerCase().startsWith(langPrefix));
 
-  if (best) {
-    utter.voice = best;
-    console.log('[Audio] Using voice:', best.name);
+  if (matchedVoice) {
+    utter.voice = matchedVoice;
+    console.log('[Audio] Using matched voice:', matchedVoice.name, 'for lang:', matchedVoice.lang);
+  } else {
+    console.log(`[Audio] No explicit voice installed for ${item.lang}. Using browser default TTS Engine.`);
   }
 
   utter.onend = () => {
