@@ -146,6 +146,7 @@ function normalizeUrgency(urgency: string): 'routine' | 'moderate' | 'emergency'
 export async function translateText(text: string, targetLanguage: string): Promise<string> {
   const systemPrompt = `Translate the following short clinical alert sentence into ${targetLanguage}. Keep it natural, concise, and suitable for being spoken aloud. IMPORTANT: Do NOT translate or change any text inside square brackets like [Patient Name], [Doctor Name], or [Reason]. Keep those exact bracket placeholders unchanged in your response. Return ONLY the translated sentence.`;
   
+  // 1. Try Groq API
   if (process.env.GROQ_API_KEY) {
     try {
       console.log(`[AI Translation] Attempting Groq translation to ${targetLanguage} for: "${text}"...`);
@@ -175,14 +176,52 @@ export async function translateText(text: string, targetLanguage: string): Promi
         const contentStr = data.choices?.[0]?.message?.content;
         if (contentStr) {
           const result = contentStr.trim();
-          console.log(`[AI Translation] Translated text to ${targetLanguage}: "${result}"`);
+          console.log(`[AI Translation] Translated text via Groq to ${targetLanguage}: "${result}"`);
           return result;
         }
       } else {
-        console.error('[AI Translation] Groq API returned error status:', response.status, await response.text());
+        console.error('[AI Translation] Groq API returned error status:', response.status);
       }
     } catch (err) {
-      console.error('[AI Translation] Groq translation failed:', err);
+      console.error('[AI Translation] Groq translation failed, falling back to Gemini:', err);
+    }
+  }
+
+  // 2. Try Gemini API Fallback
+  if (process.env.GEMINI_API_KEY) {
+    try {
+      console.log(`[AI Translation] Attempting Gemini fallback translation to ${targetLanguage} for: "${text}"...`);
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 4000); // 4s timeout
+
+      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [
+            {
+              role: 'user',
+              parts: [{ text: `${systemPrompt}\n\nSentence to translate:\n"${text}"` }]
+            }
+          ]
+        }),
+        signal: controller.signal
+      });
+      clearTimeout(timeoutId);
+
+      if (response.ok) {
+        const data = await response.json();
+        const resultText = data.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (resultText) {
+          const result = resultText.trim();
+          console.log(`[AI Translation] Translated text via Gemini to ${targetLanguage}: "${result}"`);
+          return result;
+        }
+      } else {
+        console.error('[AI Translation] Gemini API returned error status:', response.status);
+      }
+    } catch (err) {
+      console.error('[AI Translation] Gemini translation failed:', err);
     }
   }
 
