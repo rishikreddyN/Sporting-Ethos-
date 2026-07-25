@@ -410,8 +410,11 @@ export default function DoctorDashboard() {
     }
 
     Object.entries(params).forEach(([key, val]) => {
-      templateText = templateText.replace(`[${key}]`, val);
+      templateText = templateText.replaceAll(`[${key}]`, val);
     });
+    // Extra safety: replace any residual translated bracket tokens if LLM modified the placeholder
+    templateText = templateText.replace(/\[(?:పేషెంట్|రోగి|पेशेंट|நோயாளி)\s*పేరు\]/gi, params['Patient Name'] || '');
+    templateText = templateText.replace(/\[(?:డాక్టర్|डॉक्टर|டாக்டர்)\s*పేరు\]/gi, params['Doctor Name'] || '');
 
     if (isEmergency) {
       speakEmergency(templateText, speechLang);

@@ -144,7 +144,7 @@ function normalizeUrgency(urgency: string): 'routine' | 'moderate' | 'emergency'
 }
 
 export async function translateText(text: string, targetLanguage: string): Promise<string> {
-  const systemPrompt = `Translate the following short clinical alert sentence into ${targetLanguage}. Keep it natural, concise, and suitable for being spoken aloud. Return ONLY the translated sentence, nothing else.`;
+  const systemPrompt = `Translate the following short clinical alert sentence into ${targetLanguage}. Keep it natural, concise, and suitable for being spoken aloud. IMPORTANT: Do NOT translate or change any text inside square brackets like [Patient Name], [Doctor Name], or [Reason]. Keep those exact bracket placeholders unchanged in your response. Return ONLY the translated sentence.`;
   
   if (process.env.GROQ_API_KEY) {
     try {
