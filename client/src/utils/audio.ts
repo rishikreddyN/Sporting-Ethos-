@@ -51,8 +51,36 @@ interface QueueItem {
 }
 
 let activeUtterance: SpeechSynthesisUtterance | null = null;
+let activeAudio: HTMLAudioElement | null = null;
 const queue: QueueItem[] = [];
 let busy = false;
+
+function playGoogleTTS(text: string, langPrefix: string, onDone: () => void) {
+  try {
+    const url = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(text)}&tl=${langPrefix}&client=tw-ob`;
+    const audio = new Audio(url);
+    activeAudio = audio;
+
+    audio.onended = () => {
+      if (activeAudio === audio) activeAudio = null;
+      onDone();
+    };
+    audio.onerror = (e) => {
+      console.warn('[Audio] Google TTS audio error:', e);
+      if (activeAudio === audio) activeAudio = null;
+      onDone();
+    };
+
+    audio.play().catch(err => {
+      console.warn('[Audio] Google TTS audio play() failed:', err);
+      if (activeAudio === audio) activeAudio = null;
+      onDone();
+    });
+  } catch (err) {
+    console.warn('[Audio] Failed to instantiate Audio for Google TTS:', err);
+    onDone();
+  }
+}
 
 function drainQueue() {
   if (busy || queue.length === 0) return;
@@ -60,54 +88,77 @@ function drainQueue() {
   busy = true;
   console.log('[Audio] Speaking:', item.text, 'in lang:', item.lang);
 
-  const utter = new SpeechSynthesisUtterance(item.text);
-  activeUtterance = utter; // Prevent garbage collection bug in Chrome
-
-  utter.lang = item.lang;
-  utter.rate = 0.9; // Slightly slower for clearer pronunciation in translated languages
-  utter.pitch = 1.0;
-  utter.volume = 1.0;
-
-  // Pick best voice for the target language
+  const langPrefix = item.lang.split('-')[0].toLowerCase();
   const voices = window.speechSynthesis.getVoices();
   console.log('[Audio] Available voices count:', voices.length);
-  
-  const langPrefix = item.lang.split('-')[0].toLowerCase();
+
   const matchedVoice = 
     voices.find(v => v.lang.toLowerCase() === item.lang.toLowerCase()) ||
     voices.find(v => v.lang.toLowerCase().startsWith(langPrefix));
 
   if (matchedVoice) {
+    console.log('[Audio] Using matched OS voice:', matchedVoice.name, 'for lang:', matchedVoice.lang);
+    const utter = new SpeechSynthesisUtterance(item.text);
+    activeUtterance = utter;
     utter.voice = matchedVoice;
-    console.log('[Audio] Using matched voice:', matchedVoice.name, 'for lang:', matchedVoice.lang);
+    utter.lang = item.lang;
+    utter.rate = 0.9;
+    utter.pitch = 1.0;
+    utter.volume = 1.0;
+
+    utter.onend = () => {
+      if (activeUtterance === utter) activeUtterance = null;
+      busy = false;
+      setTimeout(drainQueue, 300);
+    };
+    utter.onerror = (e) => {
+      console.warn('[Audio] Speech error:', e);
+      if (activeUtterance === utter) activeUtterance = null;
+      busy = false;
+      setTimeout(drainQueue, 300);
+    };
+
+    window.speechSynthesis.speak(utter);
+  } else if (langPrefix !== 'en') {
+    console.log(`[Audio] No OS voice for ${item.lang}. Using high-quality Google TTS audio fallback for ${langPrefix}...`);
+    playGoogleTTS(item.text, langPrefix, () => {
+      busy = false;
+      setTimeout(drainQueue, 300);
+    });
   } else {
-    console.log(`[Audio] No explicit voice installed for ${item.lang}. Using browser default TTS Engine.`);
+    const utter = new SpeechSynthesisUtterance(item.text);
+    activeUtterance = utter;
+    utter.lang = item.lang;
+    utter.rate = 0.9;
+    utter.pitch = 1.0;
+    utter.volume = 1.0;
+
+    utter.onend = () => {
+      if (activeUtterance === utter) activeUtterance = null;
+      busy = false;
+      setTimeout(drainQueue, 300);
+    };
+    utter.onerror = (e) => {
+      console.warn('[Audio] Speech error:', e);
+      if (activeUtterance === utter) activeUtterance = null;
+      busy = false;
+      setTimeout(drainQueue, 300);
+    };
+
+    window.speechSynthesis.speak(utter);
   }
-
-  utter.onend = () => {
-    if (activeUtterance === utter) {
-      activeUtterance = null;
-    }
-    busy = false;
-    setTimeout(drainQueue, 300);
-  };
-  utter.onerror = (e) => {
-    console.warn('[Audio] Speech error:', e);
-    if (activeUtterance === utter) {
-      activeUtterance = null;
-    }
-    busy = false;
-    setTimeout(drainQueue, 300);
-  };
-
-  window.speechSynthesis.speak(utter);
 }
 
 export function cancelSpeech() {
-  if (!('speechSynthesis' in window)) return;
-  console.log('[Audio] Canceling all speech and clearing queue.', activeUtterance ? 'Active speech was playing.' : '');
+  if ('speechSynthesis' in window) {
+    window.speechSynthesis.cancel();
+  }
+  if (activeAudio) {
+    activeAudio.pause();
+    activeAudio = null;
+  }
+  console.log('[Audio] Canceling all speech and clearing queue.');
   queue.length = 0;
-  window.speechSynthesis.cancel();
   busy = false;
   activeUtterance = null;
 }
