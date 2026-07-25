@@ -436,16 +436,32 @@ export default function DoctorDashboard() {
   // a user gesture per-session; sessionStorage was unreliable across hot-reloads)
   const [audioUnlocked, setAudioUnlocked] = useState<boolean>(false);
 
+const ENABLE_SOUND_TEXTS: Record<string, string> = {
+  en: 'Sound alerts enabled. You will be notified when patients check in.',
+  hi: 'ध्वनि अलर्ट सक्षम किए गए। मरीज चेक-इन करने पर आपको सूचित किया जाएगा।',
+  te: 'ధ్వని హెచ్చరికలు సక్రియం చేయబడ్డాయి. రోగులు చెక్-ఇన్ చేసినప్పుడు మీకు తెలియజేయబడుతుంది.',
+  ta: 'ஒலி எச்சரிக்கைகள் இயக்கப்பட்டன. நோயாளிகள் செக்-இன் செய்யும்போது உங்களுக்கு அறிவிக்கப்படும்.'
+};
+
+const TEST_VOICE_TEXTS: Record<string, string> = {
+  en: 'This is a test. Voice announcements are working correctly.',
+  hi: 'यह एक परीक्षण है। आवाज की घोषणाएं सही ढंग से काम कर रही हैं।',
+  te: 'ఇది ఒక పరీక్ష. వాయిస్ ప్రకటనలు సరిగ్గా పనిచేస్తున్నాయి.',
+  ta: 'இது ஒரு சோதனை. குரல் அறிவிப்புகள் சரியாக வேலை செய்கின்றன.'
+};
+
   const handleEnableSound = async () => {
     await unlockAudio();
     setAudioUnlocked(true);
     const speechLang = selectedLang === 'hi' ? 'hi-IN' : selectedLang === 'te' ? 'te-IN' : selectedLang === 'ta' ? 'ta-IN' : 'en-IN';
-    speak('Sound alerts enabled. You will be notified when patients check in.', speechLang);
+    const text = ENABLE_SOUND_TEXTS[selectedLang] || ENABLE_SOUND_TEXTS.en;
+    speak(text, speechLang);
   };
 
   const handleTestVoice = () => {
     const speechLang = selectedLang === 'hi' ? 'hi-IN' : selectedLang === 'te' ? 'te-IN' : selectedLang === 'ta' ? 'ta-IN' : 'en-IN';
-    speak('This is a test. Voice announcements are working correctly.', speechLang);
+    const text = TEST_VOICE_TEXTS[selectedLang] || TEST_VOICE_TEXTS.en;
+    speak(text, speechLang);
     playChime();
   };
 
