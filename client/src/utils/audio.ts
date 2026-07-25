@@ -127,9 +127,9 @@ export function speak(text: string, lang: string = 'en-US') {
     console.warn('[Audio] SpeechSynthesis not available.');
     return;
   }
+  // Always attempt unlock if not already unlocked
   if (!_unlocked) {
-    console.warn('[Audio] Audio not unlocked yet — skipping speak()');
-    return;
+    unlockAudio().catch(() => {});
   }
   console.log('[Audio] Queuing speech:', text, 'in lang:', lang);
   queue.push({ text, lang });
@@ -197,4 +197,16 @@ export function playAlert() {
   } catch (e) {
     console.warn('[Audio] Alert failed:', e);
   }
+}
+
+if (typeof window !== 'undefined') {
+  const autoUnlock = () => {
+    unlockAudio().catch(() => {});
+    window.removeEventListener('click', autoUnlock);
+    window.removeEventListener('touchstart', autoUnlock);
+    window.removeEventListener('keydown', autoUnlock);
+  };
+  window.addEventListener('click', autoUnlock);
+  window.addEventListener('touchstart', autoUnlock);
+  window.addEventListener('keydown', autoUnlock);
 }
