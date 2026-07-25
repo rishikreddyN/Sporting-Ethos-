@@ -933,7 +933,39 @@ export default function DoctorDashboard() {
           </p>
         </div>
 
-        <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
+        <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
+
+          {/* ── Language Selector (always visible in header) ── */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>🌐 Voice:</span>
+            <select
+              id="doctor-lang-header-selector"
+              value={selectedLang}
+              onChange={e => {
+                const lang = e.target.value;
+                setSelectedLang(lang);
+                sessionStorage.setItem('doctor_lang_pref', lang);
+                setTranslationCache({});
+                if (lang !== 'en') preFetchTranslations(lang);
+              }}
+              style={{
+                background: 'rgba(255,255,255,0.06)',
+                border: '1px solid var(--border-color)',
+                borderRadius: '8px',
+                padding: '0.35rem 0.6rem',
+                color: 'var(--text-primary)',
+                fontSize: '0.78rem',
+                cursor: 'pointer',
+                outline: 'none'
+              }}
+            >
+              <option value="en">🇬🇧 English</option>
+              <option value="hi">🇮🇳 Hindi</option>
+              <option value="te">🇮🇳 Telugu</option>
+              <option value="ta">🇮🇳 Tamil</option>
+            </select>
+          </div>
+
           {audioUnlocked && (
             <button
               onClick={handleTestVoice}
