@@ -13,14 +13,64 @@ export async function sendQrEmail(
   token: string,
   appointmentId: string
 ) {
-  const clientBase = process.env.CLIENT_URL || 'https://sporting-ethos.vercel.app';
+  const clientBase = process.env.CLIENT_URL || 'https://sporting-ethos-8fqj.vercel.app';
   const checkinUrl = `${clientBase}/patient?token=${token}&patientId=${appointmentId}&name=${encodeURIComponent(patientName)}&time=${encodeURIComponent(scheduledTime)}`;
   
   // Generate QR Code PNG buffer & Base64
   const qrBuffer = await QRCode.toBuffer(checkinUrl, { width: 250, margin: 2 });
   const qrBase64 = qrBuffer.toString('base64');
 
-  // 1. OPTION 1: Resend HTTP API (Bypasses all cloud SMTP port blocks)
+  // 1. OPTION 1: Standard SMTP (Gmail App Password) — Delivers to ALL email addresses without sandbox limits
+  const host = process.env.SMTP_HOST || 'smtp.gmail.com';
+  const port = parseInt(process.env.SMTP_PORT || '587', 10);
+  const user = process.env.SMTP_USER;
+  const pass = process.env.SMTP_PASS;
+
+  if (user && pass) {
+    try {
+      console.log(`[EMAIL SMTP INIT] Host: ${host}:${port}, User: ${user}, Sending to: ${patientEmail}`);
+      
+      const smtpTransporter = nodemailer.createTransport({
+        host,
+        port,
+        secure: port === 465,
+        auth: { user, pass },
+        tls: { rejectUnauthorized: false },
+        connectionTimeout: 10000
+      });
+
+      const mailSender = `"Sporting Ethos Support" <${user}>`;
+      
+      const info = await smtpTransporter.sendMail({
+        from: mailSender,
+        to: patientEmail,
+        subject: 'Your check-in QR code — Sporting Ethos appointment confirmed',
+        html: `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 8px;">
+            <h2>Appointment Confirmed</h2>
+            <p>Hi <strong>${patientName}</strong>,</p>
+            <p>Your appointment with <strong>${expertName}</strong> is confirmed for <strong>${new Date(scheduledTime).toLocaleString()}</strong>.</p>
+            <div style="text-align: center; margin: 25px 0;">
+              <img src="cid:qrcode" style="width: 200px; height: 200px; display: block; margin: 0 auto;" alt="QR Code" />
+            </div>
+            <p style="font-size: 13px; color: #64748b;">Appointment ID: <code>${appointmentId}</code></p>
+          </div>
+        `,
+        attachments: [{ filename: 'checkin-qr.png', content: qrBuffer, cid: 'qrcode' }]
+      });
+
+      console.log(`[EMAIL SENT SMTP SUCCESS] MessageID: ${info.messageId}`);
+      console.log(`[EMAIL SENT SMTP ACCEPTED]:`, info.accepted);
+      
+      lastSentQrUrl = checkinUrl;
+      lastSentQrToken = token;
+      return { testUrl: checkinUrl, token };
+    } catch (smtpErr: any) {
+      console.error('[EMAIL SMTP FAILED] Trying Resend fallback...', smtpErr);
+    }
+  }
+
+  // 2. OPTION 2: Resend HTTP API Fallback
   if (process.env.RESEND_API_KEY) {
     try {
       console.log('[EMAIL] Sending via Resend HTTPS API to:', patientEmail);
@@ -72,67 +122,6 @@ export async function sendQrEmail(
       }
     } catch (e) {
       console.error('[EMAIL RESEND ERROR]:', e);
-    }
-  }
-
-  // 2. OPTION 2: Standard SMTP (Gmail / Custom)
-  const host = process.env.SMTP_HOST;
-  const port = parseInt(process.env.SMTP_PORT || '587', 10);
-  const user = process.env.SMTP_USER;
-  const pass = process.env.SMTP_PASS;
-
-  if (host && user && pass) {
-    try {
-      console.log(`[EMAIL SMTP INIT] Host: ${host}:${port}, User: ${user}`);
-      console.log(`[EMAIL SMTP DETAILS] Recipient (To): "${patientEmail}", Patient: "${patientName}", Expert: "${expertName}"`);
-      
-      const smtpTransporter = nodemailer.createTransport({
-        host,
-        port,
-        secure: port === 465,
-        auth: { user, pass },
-        tls: { rejectUnauthorized: false },
-        connectionTimeout: 10000, // 10 second timeout
-        debug: true,
-        logger: true
-      });
-
-      const mailSender = `"Sporting Ethos Support" <${user}>`;
-      console.log(`[EMAIL SMTP SENDING] Initiating sendMail to "${patientEmail}"...`);
-      
-      const info = await smtpTransporter.sendMail({
-        from: mailSender,
-        to: patientEmail,
-        subject: 'Your check-in QR code — Sporting Ethos appointment confirmed',
-        html: `
-          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 8px;">
-            <h2>Appointment Confirmed</h2>
-            <p>Hi <strong>${patientName}</strong>,</p>
-            <p>Your appointment with <strong>${expertName}</strong> is confirmed for <strong>${new Date(scheduledTime).toLocaleString()}</strong>.</p>
-            <div style="text-align: center; margin: 25px 0;">
-              <img src="cid:qrcode" style="width: 200px; height: 200px; display: block; margin: 0 auto;" alt="QR Code" />
-            </div>
-            <p style="font-size: 13px; color: #64748b;">Appointment ID: <code>${appointmentId}</code></p>
-          </div>
-        `,
-        attachments: [{ filename: 'checkin-qr.png', content: qrBuffer, cid: 'qrcode' }]
-      });
-
-      console.log(`[EMAIL SENT SMTP SUCCESS] MessageID: ${info.messageId}`);
-      console.log(`[EMAIL SENT SMTP RESPONSE]: ${info.response}`);
-      console.log(`[EMAIL SENT SMTP ACCEPTED]:`, info.accepted);
-      console.log(`[EMAIL SENT SMTP REJECTED]:`, info.rejected);
-      
-      lastSentQrUrl = checkinUrl;
-      lastSentQrToken = token;
-      return { testUrl: checkinUrl, token };
-    } catch (smtpErr: any) {
-      console.error('[EMAIL SMTP FAILED] Detailed SMTP Error:', smtpErr);
-      if (smtpErr && typeof smtpErr === 'object') {
-        console.error('[EMAIL SMTP ERROR CODE]:', smtpErr.code);
-        console.error('[EMAIL SMTP ERROR COMMAND]:', smtpErr.command);
-        console.error('[EMAIL SMTP ERROR RESPONSE]:', smtpErr.response);
-      }
     }
   }
 
