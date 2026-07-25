@@ -45,32 +45,54 @@ export async function unlockAudio(): Promise<void> {
 
 // ─── Speech queue ─────────────────────────────────────────────────────────────
 
+interface QueueItem {
+  text: string;
+  lang: string;
+}
+
 let activeUtterance: SpeechSynthesisUtterance | null = null;
-const queue: string[] = [];
+const queue: QueueItem[] = [];
 let busy = false;
 
 function drainQueue() {
   if (busy || queue.length === 0) return;
-  const text = queue.shift()!;
+  const item = queue.shift()!;
   busy = true;
-  console.log('[Audio] Speaking:', text);
+  console.log('[Audio] Speaking:', item.text, 'in lang:', item.lang);
 
-  const utter = new SpeechSynthesisUtterance(text);
+  const utter = new SpeechSynthesisUtterance(item.text);
   activeUtterance = utter; // Prevent garbage collection bug in Chrome
 
-  utter.lang = 'en-US';
-  utter.rate = 1.0;
+  utter.lang = item.lang;
+  utter.rate = 0.9; // Slightly slower for clearer pronunciation in translated languages
   utter.pitch = 1.0;
   utter.volume = 1.0;
 
-  // Pick best English voice — voices list loads asynchronously in Chrome
+  // Pick best voice for the target language
   const voices = window.speechSynthesis.getVoices();
   console.log('[Audio] Available voices:', voices.length);
-  const best =
-    voices.find(v => v.name.includes('Google US English')) ||
-    voices.find(v => v.lang === 'en-US' && !v.localService) ||
-    voices.find(v => v.lang.startsWith('en')) ||
-    null;
+  
+  // Find a voice matching the target language code (e.g. 'hi-IN')
+  let best = voices.find(v => v.lang.toLowerCase() === item.lang.toLowerCase());
+  
+  // Fallback to prefix matching (e.g. 'hi' for 'hi-IN')
+  if (!best) {
+    const langPrefix = item.lang.split('-')[0].toLowerCase();
+    best = voices.find(v => v.lang.toLowerCase().startsWith(langPrefix));
+  }
+  
+  // Graceful fallback to English if no voice is found for the selected language
+  if (!best) {
+    console.warn(`[Audio] No voice found for language ${item.lang}. Falling back to English.`);
+    utter.lang = 'en-IN'; // Fallback language code
+    best = 
+      voices.find(v => v.lang === 'en-IN') ||
+      voices.find(v => v.name.includes('Google US English')) ||
+      voices.find(v => v.lang === 'en-US' && !v.localService) ||
+      voices.find(v => v.lang.startsWith('en')) ||
+      null;
+  }
+
   if (best) {
     utter.voice = best;
     console.log('[Audio] Using voice:', best.name);
@@ -104,17 +126,17 @@ export function cancelSpeech() {
   activeUtterance = null;
 }
 
-export function speakEmergency(text: string) {
+export function speakEmergency(text: string, lang: string = 'en-US') {
   if (!('speechSynthesis' in window)) return;
-  console.log('[Audio] EMERGENCY OVERRIDE TRIGGERED. Speaking:', text);
+  console.log('[Audio] EMERGENCY OVERRIDE TRIGGERED. Speaking:', text, 'in lang:', lang);
   cancelSpeech();
   // Wait 150ms to allow the browser to fully cancel current speech before scheduling the new one
   setTimeout(() => {
-    speak(text);
+    speak(text, lang);
   }, 150);
 }
 
-export function speak(text: string) {
+export function speak(text: string, lang: string = 'en-US') {
   if (!('speechSynthesis' in window)) {
     console.warn('[Audio] SpeechSynthesis not available.');
     return;
@@ -123,8 +145,8 @@ export function speak(text: string) {
     console.warn('[Audio] Audio not unlocked yet — skipping speak()');
     return;
   }
-  console.log('[Audio] Queuing speech:', text);
-  queue.push(text);
+  console.log('[Audio] Queuing speech:', text, 'in lang:', lang);
+  queue.push({ text, lang });
 
   // If voices aren't loaded yet, wait for them
   if (window.speechSynthesis.getVoices().length === 0) {

@@ -4,7 +4,7 @@ import { startEscalationTimer, triggerEscalationImmediately } from './escalation
 import { Server } from 'socket.io';
 import { v4 as uuidv4 } from 'uuid';
 import { sendQrEmail, getLastSentQr } from './email';
-import { summarizeSymptoms } from './ai';
+import { summarizeSymptoms, translateText } from './ai';
 
 export function createRouter(io: Server): Router {
   const router = Router();
@@ -462,6 +462,22 @@ export function createRouter(io: Server): Router {
     } catch (err) {
       console.error(err);
       res.status(500).json({ error: 'Failed to trigger escalation' });
+    }
+  });
+
+  // POST endpoint to translate text using Groq
+  router.post('/translate', async (req: Request, res: Response) => {
+    const { text, targetLanguage } = req.body;
+    if (!text || !targetLanguage) {
+      return res.status(400).json({ error: 'text and targetLanguage are required' });
+    }
+
+    try {
+      const translated = await translateText(text, targetLanguage);
+      res.json({ translated });
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: 'Translation failed' });
     }
   });
 

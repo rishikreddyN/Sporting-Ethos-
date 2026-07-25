@@ -39,7 +39,8 @@ function EscalationCountdown({
   escalationWindowSeconds,
   onFastForwardEscalation,
   onWarnLevelChange,
-  patientName
+  patientName,
+  onSpeakReminder
 }: { 
   checkedInAt: string; 
   isEscalated: boolean; 
@@ -47,6 +48,7 @@ function EscalationCountdown({
   onFastForwardEscalation: () => void;
   onWarnLevelChange: (level: 0 | 50 | 80 | 100) => void;
   patientName: string;
+  onSpeakReminder?: (templateKey: 'wait50' | 'wait80', patientName: string) => void;
 }) {
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const totalSeconds = escalationWindowSeconds;
@@ -89,15 +91,23 @@ function EscalationCountdown({
       if (!hasFired80.current) {
         hasFired80.current = true;
         hasFired50.current = true;
-        speak(`${patientName} has been waiting a while, please acknowledge soon.`);
+        if (onSpeakReminder) {
+          onSpeakReminder('wait80', patientName);
+        } else {
+          speak(`${patientName} has been waiting a while, please acknowledge soon.`);
+        }
       }
     } else if (elapsedPercent >= 50 && elapsedPercent < 80) {
       if (!hasFired50.current) {
         hasFired50.current = true;
-        speak(`Reminder: ${patientName} is waiting.`);
+        if (onSpeakReminder) {
+          onSpeakReminder('wait50', patientName);
+        } else {
+          speak(`Reminder: ${patientName} is waiting.`);
+        }
       }
     }
-  }, [elapsedSeconds, totalSeconds, isEscalated, patientName, onWarnLevelChange]);
+  }, [elapsedSeconds, totalSeconds, isEscalated, patientName, onWarnLevelChange, onSpeakReminder]);
 
   const timeLeft = Math.max(0, totalSeconds - elapsedSeconds);
   const minutes = Math.floor(timeLeft / 60);
@@ -151,12 +161,14 @@ function PatientWaitingCard({
   appt,
   escalationWindowSeconds,
   onAcknowledge,
-  onDeveloperEscalate
+  onDeveloperEscalate,
+  onSpeakReminder
 }: {
   appt: Appointment;
   escalationWindowSeconds: number;
   onAcknowledge: (id: string) => void;
   onDeveloperEscalate: (id: string) => void;
+  onSpeakReminder?: (templateKey: 'wait50' | 'wait80', patientName: string) => void;
 }) {
   const [warnLevel, setWarnLevel] = useState<0 | 50 | 80 | 100>(0);
   
@@ -243,6 +255,7 @@ function PatientWaitingCard({
           onFastForwardEscalation={() => onDeveloperEscalate(appt.id)}
           onWarnLevelChange={setWarnLevel}
           patientName={appt.patient_name}
+          onSpeakReminder={onSpeakReminder}
         />
       )}
 
@@ -255,6 +268,38 @@ function PatientWaitingCard({
   );
 }
 
+const LOCAL_FALLBACKS: Record<string, Record<string, string>> = {
+  hi: {
+    checkIn: "[Patient Name] ने [Doctor Name] के लिए चेक इन किया है।",
+    wait50: "याद दिलाएं: [Patient Name] प्रतीक्षा कर रहे हैं।",
+    wait80: "[Patient Name] को प्रतीक्षा करते हुए कुछ समय हो गया है, कृपया जल्द ही स्वीकार करें।",
+    escalation: "एस्केलेशन: [Patient Name] ने प्रतीक्षा समय सीमा को पार कर लिया है।",
+    emergency: "आपातकालीन संकेत: [Patient Name] को तत्काल ध्यान देने की आवश्यकता हो सकती है। कारण: [Reason]"
+  },
+  te: {
+    checkIn: "[Patient Name] [Doctor Name] కొరకు చెక్-ఇన్ అయ్యారు.",
+    wait50: "గుర్తుచేయడం: [Patient Name] వేచి ఉన్నారు.",
+    wait80: "[Patient Name] చాలా సేపటి నుండి వేచి ఉన్నారు, దయచేసి త్వరగా అంగీకరించండి.",
+    escalation: "ఎస్కలేషన్: [Patient Name] వేచి ఉండే సమయ పరిమితిని దాటారు.",
+    emergency: "అత్యవసర ఫ్లాగ్: [Patient Name] కి తక్షణ శ్రద్ధ కావచ్చు. కారణం: [Reason]"
+  },
+  ta: {
+    checkIn: "[Patient Name] [Doctor Name] க்காக செக்-இன் செய்துள்ளார்.",
+    wait50: "நினைவூட்டல்: [Patient Name] காத்திருக்கிறார்.",
+    wait80: "[Patient Name] சிறிது நேரமாகக் காத்திருக்கிறார், தயவுசெய்து விரைவில் ஒப்புக்கொள்ளவும்.",
+    escalation: "எஸ்கலேஷன்: [Patient Name] காத்திருப்பு நேர வரம்பை மீறிவிட்டார்.",
+    emergency: "அவசர எச்சரிக்கை: [Patient Name] க்கு உடனடி கவனம் தேவைப்படலாம். காரணம்: [Reason]"
+  }
+};
+
+const STANDARD_TEMPLATES = {
+  checkIn: "[Patient Name] has checked in for [Doctor Name].",
+  wait50: "Reminder: [Patient Name] is waiting.",
+  wait80: "[Patient Name] has been waiting a while, please acknowledge soon.",
+  escalation: "Escalation: [Patient Name] has exceeded the wait limit.",
+  emergency: "Emergency flag: [Patient Name] may need immediate attention. Reason: [Reason]"
+};
+
 export default function DoctorDashboard() {
   const [practitioners, setPractitioners] = useState<User[]>([]);
   const [selectedDoctor, setSelectedDoctor] = useState<User | null>(() => {
@@ -266,7 +311,118 @@ export default function DoctorDashboard() {
   const [escalationWindowSeconds, setEscalationWindowSeconds] = useState<number>(300);
   const [notifications, setNotifications] = useState<ToastNotification[]>([]);
   
+  const [selectedLang, setSelectedLang] = useState<string>(() => sessionStorage.getItem('doctor_lang_pref') || 'en');
+  const [translationCache, setTranslationCache] = useState<Record<string, string>>({});
+  
   const announcedEmergenciesRef = useRef<Set<string>>(new Set());
+
+  const preFetchTranslations = async (lang: string) => {
+    if (lang === 'en') {
+      setTranslationCache({});
+      return;
+    }
+
+    const targetLangName = lang === 'hi' ? 'Hindi' : lang === 'te' ? 'Telugu' : 'Tamil';
+    const updatedCache: Record<string, string> = {};
+
+    console.log(`[Translation Cache] Pre-fetching templates for ${targetLangName}...`);
+
+    const promises = Object.entries(STANDARD_TEMPLATES).map(async ([key, templateText]) => {
+      try {
+        const res = await fetch(`${API_BASE}/api/translate`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text: templateText, targetLanguage: targetLangName })
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.translated) {
+            updatedCache[key] = data.translated;
+            return;
+          }
+        }
+      } catch (err) {
+        console.error(`Failed to pre-fetch translation for ${key}`, err);
+      }
+      
+      // Fallback
+      const fallback = LOCAL_FALLBACKS[lang]?.[key];
+      if (fallback) {
+        updatedCache[key] = fallback;
+      } else {
+        updatedCache[key] = templateText;
+      }
+    });
+
+    await Promise.all(promises);
+    setTranslationCache(updatedCache);
+    console.log(`[Translation Cache] Finished pre-fetching templates for ${targetLangName}:`, updatedCache);
+  };
+
+  useEffect(() => {
+    if (selectedDoctor && selectedLang !== 'en') {
+      preFetchTranslations(selectedLang);
+    }
+  }, [selectedDoctor, selectedLang]);
+
+  const speakAlertText = async (templateKey: string, params: Record<string, string>, isEmergency: boolean = false) => {
+    const speechLang = selectedLang === 'hi' ? 'hi-IN' : selectedLang === 'te' ? 'te-IN' : selectedLang === 'ta' ? 'ta-IN' : 'en-IN';
+    
+    if (selectedLang === 'en') {
+      let text = STANDARD_TEMPLATES[templateKey as keyof typeof STANDARD_TEMPLATES];
+      Object.entries(params).forEach(([key, val]) => {
+        text = text.replace(`[${key}]`, val);
+      });
+      if (isEmergency) {
+        speakEmergency(text, speechLang);
+      } else {
+        speak(text, speechLang);
+      }
+      return;
+    }
+
+    let templateText = translationCache[templateKey] || LOCAL_FALLBACKS[selectedLang]?.[templateKey] || STANDARD_TEMPLATES[templateKey as keyof typeof STANDARD_TEMPLATES];
+    
+    // Dynamic reason translation for emergency alert
+    if (templateKey === 'emergency' && params['Reason'] && params['Reason'] !== 'No specific reasoning provided.') {
+      try {
+        const targetLangName = selectedLang === 'hi' ? 'Hindi' : selectedLang === 'te' ? 'Telugu' : 'Tamil';
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 1500); // 1.5s timeout
+        
+        const res = await fetch(`${API_BASE}/api/translate`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text: params['Reason'], targetLanguage: targetLangName }),
+          signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+        
+        if (res.ok) {
+          const data = await res.json();
+          if (data.translated) {
+            params['Reason'] = data.translated;
+          }
+        }
+      } catch (err) {
+        console.warn(`Reason translation failed or timed out: ${err}. Using original English reason.`);
+      }
+    }
+
+    Object.entries(params).forEach(([key, val]) => {
+      templateText = templateText.replace(`[${key}]`, val);
+    });
+
+    if (isEmergency) {
+      speakEmergency(templateText, speechLang);
+    } else {
+      speak(templateText, speechLang);
+    }
+  };
+
+  const handleSpeakReminder = (templateKey: 'wait50' | 'wait80', patientName: string) => {
+    speakAlertText(templateKey, { 'Patient Name': patientName });
+  };
   
   // Registration form states
   const [showRegisterForm, setShowRegisterForm] = useState<boolean>(false);
@@ -283,11 +439,13 @@ export default function DoctorDashboard() {
   const handleEnableSound = async () => {
     await unlockAudio();
     setAudioUnlocked(true);
-    speak('Sound alerts enabled. You will be notified when patients check in.');
+    const speechLang = selectedLang === 'hi' ? 'hi-IN' : selectedLang === 'te' ? 'te-IN' : selectedLang === 'ta' ? 'ta-IN' : 'en-IN';
+    speak('Sound alerts enabled. You will be notified when patients check in.', speechLang);
   };
 
   const handleTestVoice = () => {
-    speak('This is a test. Voice announcements are working correctly.');
+    const speechLang = selectedLang === 'hi' ? 'hi-IN' : selectedLang === 'te' ? 'te-IN' : selectedLang === 'ta' ? 'ta-IN' : 'en-IN';
+    speak('This is a test. Voice announcements are working correctly.', speechLang);
     playChime();
   };
 
@@ -354,7 +512,8 @@ export default function DoctorDashboard() {
       const docSpoken = docCleanName.toLowerCase().startsWith('dr.') ? docCleanName : `Dr. ${docCleanName}`;
       
       playChime();
-      speak(`${updatedAppt.patient_name} has checked in for ${docSpoken}.`);
+      // Announce via translated alert — falls through to English if translation not ready
+      speakAlertText('checkIn', { 'Patient Name': updatedAppt.patient_name, 'Doctor Name': docSpoken });
 
       const id = Date.now().toString();
       setNotifications(prev => [
@@ -390,7 +549,15 @@ export default function DoctorDashboard() {
         announcedEmergenciesRef.current.add(updatedAppt.id);
         console.log('[Doctor Alert] IMMEDIATE Emergency Triage for:', updatedAppt.patient_name);
         playAlert();
-        speakEmergency(`Emergency flag: ${updatedAppt.patient_name} may need immediate attention. Reason: ${updatedAppt.ai_reasoning || 'No specific reasoning provided.'}`);
+        // Translate emergency reason dynamically then speak
+        speakAlertText(
+          'emergency',
+          {
+            'Patient Name': updatedAppt.patient_name,
+            'Reason': updatedAppt.ai_reasoning || 'No specific reasoning provided.'
+          },
+          true // isEmergency
+        );
       }
     });
 
@@ -399,8 +566,8 @@ export default function DoctorDashboard() {
 
       console.log('[Doctor Warning] Your patient escalated:', data);
       playAlert();
-      // Speak the exact 100% escalation string
-      speak(`Escalation: ${data.appointment.patient_name} has exceeded the wait limit.`);
+      // Speak the translated escalation string
+      speakAlertText('escalation', { 'Patient Name': data.appointment.patient_name });
 
       const id = Date.now().toString();
       setNotifications(prev => [
@@ -433,6 +600,10 @@ export default function DoctorDashboard() {
   const handleSelectDoctor = (doctor: User) => {
     setSelectedDoctor(doctor);
     localStorage.setItem('selected_doctor_profile', JSON.stringify(doctor));
+    // Pre-fetch translations for the selected language if not English
+    if (selectedLang !== 'en') {
+      preFetchTranslations(selectedLang);
+    }
   };
 
   const handleLogout = () => {
@@ -592,6 +763,36 @@ export default function DoctorDashboard() {
                 <div className="patient-logo">🩺</div>
                 <h2>Practitioner Portal</h2>
                 <p>Select your practitioner profile to view your live patient queue</p>
+              </div>
+
+              {/* ── Language Preference (Doctor-only, session-scoped) ── */}
+              <div style={{ marginTop: '1.25rem', textAlign: 'left', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '1rem 1.25rem' }}>
+                <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '0.5rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  🌐 Voice Announcement Language
+                </label>
+                <select
+                  id="doctor-lang-selector"
+                  className="form-input"
+                  value={selectedLang}
+                  onChange={e => {
+                    const lang = e.target.value;
+                    setSelectedLang(lang);
+                    sessionStorage.setItem('doctor_lang_pref', lang);
+                    setTranslationCache({});
+                    if (lang !== 'en') preFetchTranslations(lang);
+                  }}
+                  style={{ fontSize: '0.875rem', marginBottom: 0 }}
+                >
+                  <option value="en">🇬🇧 English</option>
+                  <option value="hi">🇮🇳 Hindi (हिन्दी)</option>
+                  <option value="te">🇮🇳 Telugu (తెలుగు)</option>
+                  <option value="ta">🇮🇳 Tamil (தமிழ்)</option>
+                </select>
+                {selectedLang !== 'en' && (
+                  <p style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '0.4rem', marginBottom: 0 }}>
+                    ✅ Voice alerts will be spoken in the selected language after you log in.
+                  </p>
+                )}
               </div>
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.875rem', marginTop: '1.5rem', textAlign: 'left' }}>
@@ -813,6 +1014,7 @@ export default function DoctorDashboard() {
                   escalationWindowSeconds={escalationWindowSeconds}
                   onAcknowledge={handleAcknowledge}
                   onDeveloperEscalate={handleDeveloperEscalate}
+                  onSpeakReminder={handleSpeakReminder}
                 />
               ))
             )}

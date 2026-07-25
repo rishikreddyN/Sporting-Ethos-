@@ -142,3 +142,50 @@ function normalizeUrgency(urgency: string): 'routine' | 'moderate' | 'emergency'
   }
   return 'routine';
 }
+
+export async function translateText(text: string, targetLanguage: string): Promise<string> {
+  const systemPrompt = `Translate the following short clinical alert sentence into ${targetLanguage}. Keep it natural, concise, and suitable for being spoken aloud. Return ONLY the translated sentence, nothing else.`;
+  
+  if (process.env.GROQ_API_KEY) {
+    try {
+      console.log(`[AI Translation] Attempting Groq translation to ${targetLanguage} for: "${text}"...`);
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 4000); // 4s timeout
+
+      const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${process.env.GROQ_API_KEY}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          model: 'llama-3.1-8b-instant',
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: text }
+          ],
+          temperature: 0.3
+        }),
+        signal: controller.signal
+      });
+      clearTimeout(timeoutId);
+
+      if (response.ok) {
+        const data = await response.json();
+        const contentStr = data.choices?.[0]?.message?.content;
+        if (contentStr) {
+          const result = contentStr.trim();
+          console.log(`[AI Translation] Translated text to ${targetLanguage}: "${result}"`);
+          return result;
+        }
+      } else {
+        console.error('[AI Translation] Groq API returned error status:', response.status, await response.text());
+      }
+    } catch (err) {
+      console.error('[AI Translation] Groq translation failed:', err);
+    }
+  }
+
+  // Fallback to original text
+  return text;
+}
