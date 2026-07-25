@@ -90,7 +90,7 @@ function drainQueue() {
       voices.find(v => v.name.includes('Google US English')) ||
       voices.find(v => v.lang === 'en-US' && !v.localService) ||
       voices.find(v => v.lang.startsWith('en')) ||
-      null;
+      undefined;
   }
 
   if (best) {
